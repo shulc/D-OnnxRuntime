@@ -1,0 +1,30 @@
+{
+    "name": "d-onnxruntime",
+    "description": "D bindings + a thin static-linkable C ABI shim for ranking Vibe3D editor candidates with ONNX Runtime (AiModelBackend spike, task 0021).",
+    "license": "MIT",
+    "authors": ["Alexander Shagarov"],
+
+    "sourcePaths": ["source"],
+    "importPaths": ["source"],
+
+    "preBuildCommands-posix": [
+        "cmake -S \"$PACKAGE_DIR\" -B \"$PACKAGE_DIR/build\" -DCMAKE_BUILD_TYPE=Release",
+        "cmake --build \"$PACKAGE_DIR/build\" -j --target v3daionnx"
+    ],
+
+    "lflags-posix": ["-L$PACKAGE_DIR/build"],
+    "libs-posix": ["v3daionnx"],
+
+    "configurations": [
+        {
+            "name": "library",
+            "targetType": "staticLibrary"
+        },
+        {
+            "name": "rank_smoke",
+            "targetType": "executable",
+            "targetName": "rank_smoke",
+            "mainSourceFile": "examples/rank_smoke.d"
+        }
+    ]
+}
