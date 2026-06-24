@@ -98,7 +98,11 @@ onnxrt_status_t onnxrt_create(const char* model_path,
         onnxrt_destroy(s);
         return ONNXRT_ERR_MODEL_LOAD;
     }
-    ort()->SetIntraOpNumThreads(s->opts, 1);
+    if (check(ort()->SetIntraOpNumThreads(s->opts, 1), s, out_error,
+              ONNXRT_ERR_MODEL_LOAD)) {
+        onnxrt_destroy(s);
+        return ONNXRT_ERR_MODEL_LOAD;
+    }
 
     // On macOS the CoreML execution provider can be appended here for GPU/ANE
     // offload; omitted in the default path — CPU is portable. See DESIGN.
@@ -110,7 +114,11 @@ onnxrt_status_t onnxrt_create(const char* model_path,
 
     // Cache input/output names so onnxrt_score can name the I/O bindings.
     OrtAllocator* alloc = nullptr;
-    ort()->GetAllocatorWithDefaultOptions(&alloc);
+    if (check(ort()->GetAllocatorWithDefaultOptions(&alloc), s, out_error,
+              ONNXRT_ERR_MODEL_LOAD)) {
+        onnxrt_destroy(s);
+        return ONNXRT_ERR_MODEL_LOAD;
+    }
     char* in_name = nullptr;
     char* out_name = nullptr;
     if (check(ort()->SessionGetInputName(s->session, 0, alloc, &in_name), s,

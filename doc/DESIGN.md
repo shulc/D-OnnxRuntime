@@ -92,34 +92,38 @@ adds:
   Non-finite scores are treated as `-inf` so a NaN can't win.
 - `backendAvailable()`, `linkedAbiVersion()`.
 
-## Building from source & linking
+## Fetching & linking
 
-ONNX Runtime is a pinned git submodule (`extern/onnxruntime`, v1.27.0) built
-from source by `cmake/BuildOnnxRuntime.cmake`, which drives ONNX Runtime's own
-`tools/ci_build/build.py` via an `ExternalProject`:
+ONNX Runtime is fetched as a **prebuilt CPU release** by
+`cmake/FetchOnnxRuntime.cmake` at configure time — no source build, no submodule:
 
-- Built as a **shared** library (`libonnxruntime.{so,dylib}`) — the reliable
-  path; fully static ONNX Runtime drags in dozens of split archives and is
-  painful to link. **Our shim stays static** (`libonnxrt.a`), so only one shared
-  object ships alongside the binary.
-- `dub` wiring: `preBuildCommands-posix` runs `git submodule update --init`,
-  then CMake; `lflags`/`libs` link `onnxrt` + `onnxruntime` from
-  `build/onnxruntime/Release`. An rpath of `$ORIGIN` (Linux) /
-  `@executable_path` (macOS) is added so a distributed binary finds
-  `libonnxruntime` placed next to it.
-- First build is long (ONNX Runtime fetches protobuf/abseil/… and compiles
-  everything); incremental and cached thereafter.
+- Pinned to **1.22.0**, the last release shipping all four targets
+  (`linux-x64`, `win-x64`, `osx-x86_64`, `osx-arm64`); 1.23+ dropped Intel
+  macOS. The shim uses ONNX Runtime's stable C API, so the version is not
+  load-bearing — bump `ONNXRT_VERSION` to move it.
+- The right tarball is downloaded (8–70 MB), its **SHA-256 verified** against a
+  pinned table, extracted, and promoted to a stable path
+  `build/onnxruntime/sdk/{include,lib}`. Idempotent and cached after the first
+  configure. Escape hatch: `-DONNXRT_ORT_DIR=<sdk>` to use a hand-placed /
+  custom / static build.
+- The release is a **dynamic** library (`libonnxruntime.{so,dylib}`); there is
+  no static ONNX Runtime release. **Our shim stays static** (`libonnxrt.a`), so
+  a consumer ships its own code plus one `libonnxruntime` shared object.
+- `dub` wiring: `lflags`/`libs` link `onnxrt` + `onnxruntime` from
+  `build/onnxruntime/sdk/lib`; an rpath of `$ORIGIN` (Linux) / `@executable_path`
+  (macOS) is added so a distributed binary finds `libonnxruntime` placed next to
+  it.
 - **macOS**: CPU is the portable default. The CoreML execution provider can be
   appended in `onnxrt_create` (`OrtSessionOptionsAppendExecutionProvider_CoreML`)
   for GPU/ANE offload — left out of the default path.
 
-The `mock` / `stub` backends compile with zero external dependencies and exist
-so the binding layer (and its unit tests) can build without the heavy ONNX
-Runtime build — handy for CI.
+The `mock` / `stub` backends compile with zero external dependencies, so the
+binding layer (and its unit tests) build without any download — handy for CI.
 
 ## Open questions
 
 - Model output contract: single score per row (assumed) vs `[rows, classes]` +
   gather.
-- Fully-static ONNX Runtime link (single-file distribution) vs the current
-  shared-lib + rpath approach — a binary-size / link-complexity tradeoff.
+- The release is CPU dynamic-lib only. A fully-static / GPU ONNX Runtime needs a
+  custom build supplied via `ONNXRT_ORT_DIR` — a binary-size / link-complexity
+  tradeoff left to the consumer.

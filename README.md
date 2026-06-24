@@ -9,7 +9,7 @@ reduced to a score, regressors).
 The C boundary mentions no ONNX Runtime, C++ or STL types — plain C scalars and
 caller-owned buffers — so it binds cleanly from D via `extern(C)` and the shim
 itself links as one static archive you can fold into a distributable binary.
-ONNX Runtime is built from source as a pinned git submodule.
+ONNX Runtime is fetched as a small prebuilt release (CPU, dynamic library).
 
 ## Layout
 
@@ -21,38 +21,49 @@ csrc/onnxrt_stub.c            backend=stub  honest "not built", no deps
 source/onnxrt/c.d             D extern(C) bindings, 1:1 with the header
 source/onnxrt/backend.d       RAII OnnxSession + rank() (argmax + softmax)
 examples/score_smoke.d        smoke test: create -> score -> destroy
-cmake/BuildOnnxRuntime.cmake  builds the submodule via ONNX Runtime's build.py
+tools/make_test_model.py      generates a tiny model.onnx (no deps)
+cmake/FetchOnnxRuntime.cmake  downloads + verifies the ONNX Runtime release
 CMakeLists.txt                builds build/libonnxrt.a
-extern/onnxruntime            git submodule, pinned to v1.27.0
-doc/DESIGN.md                 ABI, lifetime, error policy, build & link notes
+doc/DESIGN.md                 ABI, lifetime, error policy, fetch & link notes
 ```
 
-## First build
+## Build
 
 ```sh
-git submodule update --init --recursive extern/onnxruntime
 dub build
 ```
 
-`dub`'s `preBuildCommands-posix` initialises the submodule, then CMake builds
-ONNX Runtime from source and the shim. **The first build is long** — ONNX
-Runtime fetches its own dependencies (protobuf, abseil, …) and compiles
-everything; it is incremental afterwards and the artifacts under
-`build/onnxruntime/` are reused. Output: `build/libonnxrt.a` (our static shim) +
-`build/onnxruntime/Release/libonnxruntime.{so,dylib}` (built from source).
+`dub`'s `preBuildCommands-posix` runs CMake, which downloads the prebuilt ONNX
+Runtime release for the host platform (pinned to **1.22.0** — the last release
+covering all four targets, including Intel macOS), verifies its SHA-256,
+extracts it under `build/onnxruntime/sdk/`, and builds the shim. The download is
+small (linux-x64 ≈ 8 MB, macOS ≈ 25 MB, win-x64 ≈ 69 MB) and cached after the
+first run. Output: `build/libonnxrt.a` (static shim) + the dynamic
+`libonnxruntime` in `build/onnxruntime/sdk/lib/`.
 
-Requirements: a C/C++ toolchain, CMake ≥ 3.18, Python 3 (ONNX Runtime's
-`build.py`), and — first time — network access for its dependency fetch.
+Platforms: `linux-x64`, `win-x64`, `osx-x86_64`, `osx-arm64`. Requirements: a
+C/C++ toolchain, CMake ≥ 3.18, and network access on the first build. To point
+at a hand-placed SDK instead (e.g. a custom or static ONNX Runtime), configure
+with `-DONNXRT_ORT_DIR=/path/to/sdk` (expects `include/` + `lib/`).
 
 ## Smoke test
 
 ```sh
-dub run --config=score_smoke   # create -> score -> destroy, ends in `OK`
+python3 tools/make_test_model.py   # writes examples/model.onnx (ReduceSum)
+dub run --config=score_smoke       # create -> score -> destroy, ends in `OK`
 ```
 
-Drop an `.onnx` model at `examples/model.onnx` (input `[rows, features]` f32 →
-output `[rows]` f32) to see real scores; without one the example reports the
-load error cleanly and still proves the link.
+Expected with the generated model:
+
+```
+backend available: true
+scores: [1.1, 0.9, 1]
+argmax index: 0  confidence: 0.3672
+OK
+```
+
+Without a model at `examples/model.onnx` the example reports the load error
+cleanly and still proves the link.
 
 ## Backends
 

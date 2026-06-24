@@ -8,22 +8,21 @@
     "importPaths": ["source"],
 
     "preBuildCommands-posix": [
-        "cd \"$PACKAGE_DIR\" && git submodule update --init --recursive extern/onnxruntime",
         "cmake -S \"$PACKAGE_DIR\" -B \"$PACKAGE_DIR/build\" -DCMAKE_BUILD_TYPE=Release",
         "cmake --build \"$PACKAGE_DIR/build\" -j --target onnxrt"
     ],
 
     "lflags-posix": [
         "-L$PACKAGE_DIR/build",
-        "-L$PACKAGE_DIR/build/onnxruntime/Release"
+        "-L$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
     "lflags-linux": [
         "-rpath=$$ORIGIN",
-        "-rpath=$PACKAGE_DIR/build/onnxruntime/Release"
+        "-rpath=$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
     "lflags-osx": [
         "-rpath", "@executable_path",
-        "-rpath", "$PACKAGE_DIR/build/onnxruntime/Release"
+        "-rpath", "$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
 
     "libs-posix": ["onnxrt", "onnxruntime"],

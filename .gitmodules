@@ -1,4 +1,0 @@
-[submodule "extern/onnxruntime"]
-	path = extern/onnxruntime
-	url = https://github.com/microsoft/onnxruntime.git
-	shallow = true
