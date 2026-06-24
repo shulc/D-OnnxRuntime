@@ -18,10 +18,13 @@
     ],
     "lflags-linux": [
         "-rpath=$$ORIGIN",
+        "-rpath=$$ORIGIN/lib",
         "-rpath=$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
     "lflags-osx": [
         "-rpath", "@executable_path",
+        "-rpath", "@executable_path/lib",
+        "-rpath", "@executable_path/../Frameworks",
         "-rpath", "$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
 
