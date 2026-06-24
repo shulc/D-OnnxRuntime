@@ -10,7 +10,5 @@ __dummy.html
 d-onnxruntime
 *-test-library
 *-test-unittest
-/rank_smoke
-# Never vendor the runtime binary (task 0021: no ONNX Runtime binary in repo).
-extern/onnxruntime/
+/score_smoke
 *.onnx

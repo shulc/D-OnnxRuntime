@@ -1,80 +1,86 @@
 # D-OnnxRuntime
 
-A thin, **static-linkable** C ABI shim + D bindings for ranking Vibe3D editor
-candidates with [ONNX Runtime](https://onnxruntime.ai). It is the spike for
-vibe3d task 0021 — the first concrete `AiModelBackend`: hand it a feature
-matrix for the live candidate set, get back a score per candidate, derive an
-argmax + confidence that maps onto `AiModelBackendPrediction`.
+D bindings + a thin **static-linkable** C ABI shim over
+[ONNX Runtime](https://onnxruntime.ai). Load an `.onnx` model once and run it
+per call on a batch of feature rows, getting one score per row back — the
+common "rank / score N items with a small model" case (rankers, classifiers
+reduced to a score, regressors).
 
-The C boundary mentions no ONNX types (plain scalars + caller-owned buffers),
-so it binds cleanly from D and can be re-pointed at a second runtime later. The
-default build has **zero external dependencies** — the real ONNX Runtime is an
-opt-in backend and is never vendored into the repo.
+The C boundary mentions no ONNX Runtime, C++ or STL types — plain C scalars and
+caller-owned buffers — so it binds cleanly from D via `extern(C)` and the shim
+itself links as one static archive you can fold into a distributable binary.
+ONNX Runtime is built from source as a pinned git submodule.
 
 ## Layout
 
 ```
-include/v3d_ai_onnx.h         C API (extern "C") — the contract
-csrc/v3d_ai_onnx_stub.c       backend=stub  honest "not built", no deps
-csrc/v3d_ai_onnx_mock.c       backend=mock  deterministic fixture, no deps (default)
-csrc/v3d_ai_onnx_ort.cpp      backend=ort   real ONNX Runtime (sketch, opt-in)
-source/v3d_ai_onnx/c.d        D extern(C) bindings, 1:1 with the header
-source/v3d_ai_onnx/backend.d  RAII OnnxRanker + RankResult (argmax + softmax)
-examples/rank_smoke.d         smoke test: create -> rank -> destroy
-CMakeLists.txt                builds build/libv3daionnx.a
-doc/DESIGN.md                 ABI, lifetime, error, feature mapping, macOS build
+include/onnxrt.h              C API (extern "C") — the contract
+csrc/onnxrt_ort.cpp           backend=ort   real ONNX Runtime (default)
+csrc/onnxrt_mock.c            backend=mock  deterministic fixture, no deps
+csrc/onnxrt_stub.c            backend=stub  honest "not built", no deps
+source/onnxrt/c.d             D extern(C) bindings, 1:1 with the header
+source/onnxrt/backend.d       RAII OnnxSession + rank() (argmax + softmax)
+examples/score_smoke.d        smoke test: create -> score -> destroy
+cmake/BuildOnnxRuntime.cmake  builds the submodule via ONNX Runtime's build.py
+CMakeLists.txt                builds build/libonnxrt.a
+extern/onnxruntime            git submodule, pinned to v1.27.0
+doc/DESIGN.md                 ABI, lifetime, error policy, build & link notes
 ```
 
-## Build & smoke test
+## First build
 
 ```sh
-dub build                    # CMake prebuild -> build/libv3daionnx.a, then D lib
-dub run --config=rank_smoke  # exercises the full lifetime, ends in `OK`
+git submodule update --init --recursive extern/onnxruntime
+dub build
 ```
 
-`dub`'s `preBuildCommands-posix` runs CMake for you, so a plain `dub build` is
-enough. Default backend is `mock`, so the smoke test scores a sample matrix:
+`dub`'s `preBuildCommands-posix` initialises the submodule, then CMake builds
+ONNX Runtime from source and the shim. **The first build is long** — ONNX
+Runtime fetches its own dependencies (protobuf, abseil, …) and compiles
+everything; it is incremental afterwards and the artifacts under
+`build/onnxruntime/` are reused. Output: `build/libonnxrt.a` (our static shim) +
+`build/onnxruntime/Release/libonnxruntime.{so,dylib}` (built from source).
 
+Requirements: a C/C++ toolchain, CMake ≥ 3.18, Python 3 (ONNX Runtime's
+`build.py`), and — first time — network access for its dependency fetch.
+
+## Smoke test
+
+```sh
+dub run --config=score_smoke   # create -> score -> destroy, ends in `OK`
 ```
-abi: binding=1 linked=1
-backend available: false
-scores: [0.65, 0.85, 0.75]
-argmax index: 1  confidence: 0.3672
-OK
-```
+
+Drop an `.onnx` model at `examples/model.onnx` (input `[rows, features]` f32 →
+output `[rows]` f32) to see real scores; without one the example reports the
+load error cleanly and still proves the link.
 
 ## Backends
 
-Select at CMake configure time (`-DV3D_AI_ONNX_BACKEND=`):
+Select at CMake configure time (`-DONNXRT_BACKEND=`):
 
-| value  | deps        | `backend_available()` | use |
-|--------|-------------|-----------------------|-----|
-| `mock` | none        | 0 | default; deterministic ABI/lifetime fixture |
-| `stub` | none        | 0 | honest "no AI" build — every call → `errNotBuilt` |
-| `ort`  | ONNX Runtime| 1 | real inference (see DESIGN "macOS build & link") |
+| value  | deps         | `backendAvailable()` | use |
+|--------|--------------|----------------------|-----|
+| `ort`  | ONNX Runtime | true  | default; real inference, built from the submodule |
+| `mock` | none         | false | deterministic ABI/lifetime fixture for tests/CI |
+| `stub` | none         | false | honest "no backend" — every call → `errNotBuilt` |
 
 ```sh
-# real backend, against an out-of-tree ONNX Runtime SDK (never committed):
-cmake -S . -B build -DV3D_AI_ONNX_BACKEND=ort -DV3D_ORT_ROOT=/path/to/onnxruntime
-cmake --build build --target v3daionnx
+# fast dependency-free build of just the binding layer (tests / CI):
+cmake -S . -B build -DONNXRT_BACKEND=mock && cmake --build build --target onnxrt
 ```
 
-## Consuming from another dub project
-
-```json
-"dependencies": { "d-onnxruntime": { "path": "../D-OnnxRuntime" } }
-```
+## Use
 
 ```d
-import v3d_ai_onnx.backend;
+import onnxrt.backend;
 
-if (!backendAvailable()) { /* fall back to the deterministic advisor */ }
+if (!backendAvailable()) { /* this build has no real ONNX Runtime */ }
 
-auto ranker = OnnxRanker("model/ranker.onnx");   // throws OnnxException on fail
-auto r = ranker.rank(features, candidateCount);  // features: [N*F] row-major
-// r.index = argmax, r.confidence = softmax prob in [0,1], r.scores = raw
+auto session = OnnxSession("model.onnx");      // throws OnnxException on failure
+float[] scores = session.score(input, rowCount); // input: [rows*features] row-major
+auto r = rank(scores);                           // r.index = argmax, r.confidence in [0,1]
 ```
 
-See `doc/DESIGN.md` for the `AiModelBackendPrediction` mapping and the feature
-layout. License: MIT (ONNX Runtime is MIT; the runtime's license is separate
-from any model's license).
+See `doc/DESIGN.md` for the model contract, ownership/lifetime rules, error
+policy, and the from-source build/link details. License: MIT (ONNX Runtime is
+also MIT; the runtime's license is separate from any model's license).

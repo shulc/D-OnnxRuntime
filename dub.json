@@ -1,6 +1,6 @@
 {
     "name": "d-onnxruntime",
-    "description": "D bindings + a thin static-linkable C ABI shim for ranking Vibe3D editor candidates with ONNX Runtime (AiModelBackend spike, task 0021).",
+    "description": "D bindings + a thin static-linkable C ABI shim over ONNX Runtime: load an .onnx model and score a batch of feature rows.",
     "license": "MIT",
     "authors": ["Alexander Shagarov"],
 
@@ -8,12 +8,27 @@
     "importPaths": ["source"],
 
     "preBuildCommands-posix": [
+        "cd \"$PACKAGE_DIR\" && git submodule update --init --recursive extern/onnxruntime",
         "cmake -S \"$PACKAGE_DIR\" -B \"$PACKAGE_DIR/build\" -DCMAKE_BUILD_TYPE=Release",
-        "cmake --build \"$PACKAGE_DIR/build\" -j --target v3daionnx"
+        "cmake --build \"$PACKAGE_DIR/build\" -j --target onnxrt"
     ],
 
-    "lflags-posix": ["-L$PACKAGE_DIR/build"],
-    "libs-posix": ["v3daionnx"],
+    "lflags-posix": [
+        "-L$PACKAGE_DIR/build",
+        "-L$PACKAGE_DIR/build/onnxruntime/Release"
+    ],
+    "lflags-linux": [
+        "-rpath=$$ORIGIN",
+        "-rpath=$PACKAGE_DIR/build/onnxruntime/Release"
+    ],
+    "lflags-osx": [
+        "-rpath", "@executable_path",
+        "-rpath", "$PACKAGE_DIR/build/onnxruntime/Release"
+    ],
+
+    "libs-posix": ["onnxrt", "onnxruntime"],
+    "libs-linux": ["stdc++"],
+    "libs-osx": ["c++"],
 
     "configurations": [
         {
@@ -21,10 +36,10 @@
             "targetType": "staticLibrary"
         },
         {
-            "name": "rank_smoke",
+            "name": "score_smoke",
             "targetType": "executable",
-            "targetName": "rank_smoke",
-            "mainSourceFile": "examples/rank_smoke.d"
+            "targetName": "score_smoke",
+            "mainSourceFile": "examples/score_smoke.d"
         }
     ]
 }

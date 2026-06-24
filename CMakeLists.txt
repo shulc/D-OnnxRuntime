@@ -1,46 +1,46 @@
-# Builds the C ABI shim as a static library: build/libv3daionnx.a
+# Builds the C ABI shim as a static library: build/libonnxrt.a
 #
-# Backend is selected at configure time; the dub preBuild hook drives this.
-#   -DV3D_AI_ONNX_BACKEND=mock   (default) deterministic fixture, no deps
-#   -DV3D_AI_ONNX_BACKEND=stub             honest "not built", no deps
-#   -DV3D_AI_ONNX_BACKEND=ort              real ONNX Runtime (needs the SDK)
+# Backend is selected at configure time:
+#   -DONNXRT_BACKEND=ort   (default) link real ONNX Runtime, built from the
+#                          extern/onnxruntime submodule (see cmake/BuildOnnxRuntime.cmake)
+#   -DONNXRT_BACKEND=mock            deterministic fixture, no deps (tests/CI)
+#   -DONNXRT_BACKEND=stub            honest "not built", no deps (tests/CI)
 #
-# Static lib so consumers can fold it straight into a distributable binary
-# (no .dylib/.so to ship alongside) — see doc/DESIGN.md "macOS build & link".
+# The shim itself is a static lib so it folds into a distributable binary. With
+# the ort backend the consumer also links libonnxruntime (built under
+# build/onnxruntime/) — see doc/DESIGN.md "Building from source / linking".
 
-cmake_minimum_required(VERSION 3.16)
-project(v3d_ai_onnx C CXX)
+cmake_minimum_required(VERSION 3.18)
+project(onnxrt C CXX)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(V3D_AI_ONNX_BACKEND "mock" CACHE STRING "Shim backend: stub | mock | ort")
-set_property(CACHE V3D_AI_ONNX_BACKEND PROPERTY STRINGS stub mock ort)
+set(ONNXRT_BACKEND "ort" CACHE STRING "Shim backend: ort | mock | stub")
+set_property(CACHE ONNXRT_BACKEND PROPERTY STRINGS ort mock stub)
 
-if(V3D_AI_ONNX_BACKEND STREQUAL "ort")
-    add_library(v3daionnx STATIC csrc/v3d_ai_onnx_ort.cpp)
-    target_compile_features(v3daionnx PRIVATE cxx_std_17)
+if(ONNXRT_BACKEND STREQUAL "ort")
+    # Builds extern/onnxruntime from source and exposes:
+    #   ONNXRT_ORT_INCLUDE_DIR  — dir holding onnxruntime_c_api.h
+    #   target onnxruntime_build — the ExternalProject we depend on
+    include(${CMAKE_SOURCE_DIR}/cmake/BuildOnnxRuntime.cmake)
 
-    # ONNX Runtime SDK location: -DV3D_ORT_ROOT=/path/to/onnxruntime
-    # with include/onnxruntime_c_api.h and lib/libonnxruntime.a beneath it.
-    if(NOT DEFINED V3D_ORT_ROOT)
-        message(FATAL_ERROR "ort backend needs -DV3D_ORT_ROOT=<onnxruntime sdk>")
-    endif()
-    target_include_directories(v3daionnx PRIVATE "${V3D_ORT_ROOT}/include")
-    # The consumer (dub lflags / DESIGN notes) is responsible for putting
-    # ${V3D_ORT_ROOT}/lib on the link line — a static lib does not embed it.
-elseif(V3D_AI_ONNX_BACKEND STREQUAL "stub")
-    add_library(v3daionnx STATIC csrc/v3d_ai_onnx_stub.c)
+    add_library(onnxrt STATIC csrc/onnxrt_ort.cpp)
+    target_compile_features(onnxrt PRIVATE cxx_std_17)
+    add_dependencies(onnxrt onnxruntime_build)
+    target_include_directories(onnxrt PRIVATE "${ONNXRT_ORT_INCLUDE_DIR}")
+elseif(ONNXRT_BACKEND STREQUAL "mock")
+    add_library(onnxrt STATIC csrc/onnxrt_mock.c)
 else()
-    add_library(v3daionnx STATIC csrc/v3d_ai_onnx_mock.c)
+    add_library(onnxrt STATIC csrc/onnxrt_stub.c)
 endif()
 
-target_include_directories(v3daionnx PUBLIC include)
+target_include_directories(onnxrt PUBLIC include)
 
 # Land the archive at the build root so dub's `-L$PACKAGE_DIR/build` finds it.
-set_target_properties(v3daionnx PROPERTIES
+set_target_properties(onnxrt PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-message(STATUS "v3d_ai_onnx backend: ${V3D_AI_ONNX_BACKEND}")
+message(STATUS "onnxrt backend: ${ONNXRT_BACKEND}")
