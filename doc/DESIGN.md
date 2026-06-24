@@ -87,9 +87,11 @@ wrapper turns non-`ok` into an `OnnxException` carrying the status code.
 adds:
 
 - `OnnxSession` — RAII handle (non-copyable), `score(input, rowCount) -> float[]`.
-- `rank(scores) -> RankResult{index, confidence}` — argmax + numerically-stable
-  softmax; a generic reduction for ranking / single-label classification.
-  Non-finite scores are treated as `-inf` so a NaN can't win.
+- `rank(scores, mask = null) -> RankResult{index, confidence}` — argmax +
+  numerically-stable softmax; a generic reduction for ranking / single-label
+  classification. An optional per-row `mask` (entry <= 0.5 → ignored) skips
+  padded rows in fixed-width batches, so the softmax spans only the real rows.
+  Non-finite scores are skipped so a NaN can't win.
 - `backendAvailable()`, `linkedAbiVersion()`.
 
 ## Fetching & linking
@@ -124,6 +126,11 @@ binding layer (and its unit tests) build without any download — handy for CI.
 
 - Model output contract: single score per row (assumed) vs `[rows, classes]` +
   gather.
+- Multi-input models: `onnxrt_score` binds input/output 0 only, i.e. a single
+  `[rows, features]` tensor in, `[rows]` out. A model with several input tensors
+  (e.g. a separate shared-context or mask input) would need a more general
+  multi-tensor `onnxrt_run(named inputs -> named outputs)` entry point. Adding it
+  is straightforward but deferred until a real model needs it.
 - The release is CPU dynamic-lib only. A fully-static / GPU ONNX Runtime needs a
   custom build supplied via `ONNXRT_ORT_DIR` — a binary-size / link-complexity
   tradeoff left to the consumer.

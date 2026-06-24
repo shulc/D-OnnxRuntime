@@ -89,9 +89,11 @@ struct OnnxSession {
         return scores;
     }
 
-    /// Score then reduce to argmax + softmax confidence.
-    RankResult rank(const(float)[] input, int rowCount) {
-        return .rank(score(input, rowCount));
+    /// Score then reduce to argmax + softmax confidence. Pass `mask` (one
+    /// entry per row, <= 0.5 means "ignore") to skip padded rows.
+    RankResult rank(const(float)[] input, int rowCount,
+                    const(float)[] mask = null) {
+        return .rank(score(input, rowCount), mask);
     }
 
     /// Last error message bound to this session ("" if none).
@@ -101,17 +103,25 @@ struct OnnxSession {
     }
 }
 
-/// argmax + numerically-stable softmax over raw scores. Non-finite scores are
-/// treated as -inf so a NaN can't win; an all-non-finite set yields index -1,
-/// confidence 0.
-RankResult rank(const(float)[] scores) {
+/// argmax + numerically-stable softmax over raw scores, with an optional
+/// per-row `mask` (entry <= 0.5 → row ignored) for fixed-width padded batches
+/// where only the first N rows are real. Non-finite scores are skipped so a NaN
+/// can't win; if no row is active the result is index -1, confidence 0. The
+/// softmax denominator spans only the active rows, so confidence is the winner's
+/// probability among the real candidates.
+RankResult rank(const(float)[] scores, const(float)[] mask = null) {
     RankResult r;
-    if (scores.length == 0) return r;
+
+    bool active(size_t i) {
+        if (!scores[i].isFinite) return false;
+        if (mask.length == 0) return true;
+        return i < mask.length && mask[i] > 0.5f;
+    }
 
     int best = -1;
     float bestScore = -float.infinity;
     foreach (i, s; scores) {
-        if (!s.isFinite) continue;
+        if (!active(i)) continue;
         if (best < 0 || s > bestScore) {
             best = cast(int)i;
             bestScore = s;
@@ -120,8 +130,8 @@ RankResult rank(const(float)[] scores) {
     if (best < 0) return r;
 
     double denom = 0.0;
-    foreach (s; scores) {
-        if (!s.isFinite) continue;
+    foreach (i, s; scores) {
+        if (!active(i)) continue;
         denom += exp(cast(double)s - cast(double)bestScore);
     }
     r.index = best;
@@ -147,4 +157,12 @@ unittest {
 
     auto nan = rank([float.nan, float.nan]);
     assert(nan.index == -1);
+
+    // Masked: the highest raw score (row 1) is a padded row, so row 0 wins.
+    auto masked = rank([5.0f, 9.0f, 1.0f], [1.0f, 0.0f, 1.0f]);
+    assert(masked.index == 0);
+    assert(masked.confidence > 0.0f && masked.confidence <= 1.0f);
+
+    // All rows masked out → no selection.
+    assert(rank([5.0f, 9.0f], [0.0f, 0.0f]).index == -1);
 }
