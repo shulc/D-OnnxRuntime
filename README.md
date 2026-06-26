@@ -33,13 +33,13 @@ doc/DESIGN.md                 ABI, lifetime, error policy, fetch & link notes
 dub build
 ```
 
-`dub`'s `preBuildCommands-posix` runs CMake, which downloads the prebuilt ONNX
-Runtime release for the host platform (pinned to **1.22.0** — the last release
-covering all four targets, including Intel macOS), verifies its SHA-256,
-extracts it under `build/onnxruntime/sdk/`, and builds the shim. The download is
-small (linux-x64 ≈ 8 MB, macOS ≈ 25 MB, win-x64 ≈ 69 MB) and cached after the
-first run. Output: `build/libonnxrt.a` (static shim) + the dynamic
-`libonnxruntime` in `build/onnxruntime/sdk/lib/`.
+`dub`'s prebuild commands run CMake, which downloads the prebuilt ONNX Runtime
+release for the host platform (pinned to **1.22.0** — the last release covering
+all four targets, including Intel macOS), verifies its SHA-256, extracts it
+under `build/onnxruntime/sdk/`, and builds the shim. The download is small
+(linux-x64 ≈ 8 MB, macOS ≈ 25 MB, win-x64 ≈ 69 MB) and cached after the first
+run. Output: `build/libonnxrt.a` / `build/onnxrt.lib` (static shim) + the
+dynamic ONNX Runtime library in `build/onnxruntime/sdk/lib/`.
 
 Platforms: `linux-x64`, `win-x64`, `osx-x86_64`, `osx-arm64`. Requirements: a
 C/C++ toolchain, CMake ≥ 3.18, and network access on the first build. To point
@@ -71,7 +71,7 @@ Select at CMake configure time (`-DONNXRT_BACKEND=`):
 
 | value  | deps         | `backendAvailable()` | use |
 |--------|--------------|----------------------|-----|
-| `ort`  | ONNX Runtime | true  | default; real inference, built from the submodule |
+| `ort`  | ONNX Runtime | true  | default; real inference via the fetched prebuilt runtime |
 | `mock` | none         | false | deterministic ABI/lifetime fixture for tests/CI |
 | `stub` | none         | false | honest "no backend" — every call → `errNotBuilt` |
 
@@ -93,5 +93,5 @@ auto r = rank(scores);                           // r.index = argmax, r.confiden
 ```
 
 See `doc/DESIGN.md` for the model contract, ownership/lifetime rules, error
-policy, and the from-source build/link details. License: MIT (ONNX Runtime is
-also MIT; the runtime's license is separate from any model's license).
+policy, and the fetch/link details. License: MIT (ONNX Runtime is also MIT; the
+runtime's license is separate from any model's license).

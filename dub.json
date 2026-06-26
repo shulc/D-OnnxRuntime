@@ -11,10 +11,18 @@
         "cmake -S \"$PACKAGE_DIR\" -B \"$PACKAGE_DIR/build\" -DCMAKE_BUILD_TYPE=Release",
         "cmake --build \"$PACKAGE_DIR/build\" -j --target onnxrt"
     ],
+    "preBuildCommands-windows": [
+        "cd /d \"%PACKAGE_DIR%\" && cmd /c \"cmake -S \\\"%PACKAGE_DIR%\\\" -B \\\"%PACKAGE_DIR%\\build\\\" -DCMAKE_BUILD_TYPE=Release\"",
+        "cd /d \"%PACKAGE_DIR%\\build\" && cmd /c \"cmake --build . --config Release -j --target onnxrt\""
+    ],
 
     "lflags-posix": [
         "-L$PACKAGE_DIR/build",
         "-L$PACKAGE_DIR/build/onnxruntime/sdk/lib"
+    ],
+    "lflags-windows": [
+        "/LIBPATH:$PACKAGE_DIR/build",
+        "/LIBPATH:$PACKAGE_DIR/build/onnxruntime/sdk/lib"
     ],
     "lflags-linux": [
         "-rpath=$$ORIGIN",
@@ -31,6 +39,7 @@
     "libs-posix": ["onnxrt", "onnxruntime"],
     "libs-linux": ["stdc++"],
     "libs-osx": ["c++"],
+    "libs-windows": ["onnxrt", "onnxruntime"],
 
     "configurations": [
         {

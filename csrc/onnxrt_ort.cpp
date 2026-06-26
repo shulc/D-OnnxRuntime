@@ -1,9 +1,9 @@
 // Real ONNX Runtime backend — the default.
 //
 // Selected by `-DONNXRT_BACKEND=ort` (the default). Compiles against ONNX
-// Runtime's C API header (onnxruntime_c_api.h) from the vendored submodule and
-// links libonnxruntime built from that same source — see CMakeLists.txt /
-// doc/DESIGN.md ("Building from source").
+// Runtime's C API header (onnxruntime_c_api.h) from the fetched prebuilt SDK and
+// links the matching dynamic library — see CMakeLists.txt /
+// doc/DESIGN.md ("Fetching & linking").
 //
 // Model contract (see onnxrt.h):
 //   input  0: float32 tensor, shape [row_count, feature_count]
@@ -18,6 +18,10 @@
 #include <cstring>
 #include <new>
 #include <string>
+
+#ifdef _WIN32
+#    include <windows.h>
+#endif
 
 #define ONNXRT_ABI 1
 
@@ -67,6 +71,20 @@ bool check(OrtStatus* status, onnxrt_session* s, onnxrt_error_t* out_error,
     return true;
 }
 
+#ifdef _WIN32
+std::wstring utf8_to_ort_path(const char* path) {
+    const int len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                        path, -1, nullptr, 0);
+    if (len <= 0) return std::wstring();
+    std::wstring out(static_cast<size_t>(len), L'\0');
+    const int written = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                            path, -1, &out[0], len);
+    if (written <= 0) return std::wstring();
+    if (!out.empty() && out.back() == L'\0') out.pop_back();
+    return out;
+}
+#endif
+
 }  // namespace
 
 extern "C" {
@@ -104,9 +122,24 @@ onnxrt_status_t onnxrt_create(const char* model_path,
         return ONNXRT_ERR_MODEL_LOAD;
     }
 
+    // On Windows the C API's model path type is wchar_t (ORTCHAR_T); everywhere
+    // else it is char. The public shim contract stays UTF-8.
+#ifdef _WIN32
+    std::wstring model_path_w = utf8_to_ort_path(model_path);
+    if (model_path_w.empty()) {
+        store_error(s, out_error, ONNXRT_ERR_INVALID_ARG,
+                    "model_path must be valid UTF-8");
+        onnxrt_destroy(s);
+        return ONNXRT_ERR_INVALID_ARG;
+    }
+    const ORTCHAR_T* ort_model_path = model_path_w.c_str();
+#else
+    const ORTCHAR_T* ort_model_path = model_path;
+#endif
+
     // On macOS the CoreML execution provider can be appended here for GPU/ANE
     // offload; omitted in the default path — CPU is portable. See DESIGN.
-    if (check(ort()->CreateSession(s->env, model_path, s->opts, &s->session),
+    if (check(ort()->CreateSession(s->env, ort_model_path, s->opts, &s->session),
               s, out_error, ONNXRT_ERR_MODEL_LOAD)) {
         onnxrt_destroy(s);
         return ONNXRT_ERR_MODEL_LOAD;

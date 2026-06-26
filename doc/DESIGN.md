@@ -108,13 +108,15 @@ ONNX Runtime is fetched as a **prebuilt CPU release** by
   `build/onnxruntime/sdk/{include,lib}`. Idempotent and cached after the first
   configure. Escape hatch: `-DONNXRT_ORT_DIR=<sdk>` to use a hand-placed /
   custom / static build.
-- The release is a **dynamic** library (`libonnxruntime.{so,dylib}`); there is
-  no static ONNX Runtime release. **Our shim stays static** (`libonnxrt.a`), so
-  a consumer ships its own code plus one `libonnxruntime` shared object.
+- The release is a **dynamic** library (`libonnxruntime.{so,dylib}` /
+  `onnxruntime.dll`); there is no static ONNX Runtime release. **Our shim stays
+  static** (`libonnxrt.a` / `onnxrt.lib`), so a consumer ships its own code plus
+  one ONNX Runtime shared object.
 - `dub` wiring: `lflags`/`libs` link `onnxrt` + `onnxruntime` from
-  `build/onnxruntime/sdk/lib`; an rpath of `$ORIGIN` (Linux) / `@executable_path`
-  (macOS) is added so a distributed binary finds `libonnxruntime` placed next to
-  it.
+  `build/onnxruntime/sdk/lib`; an rpath of `$ORIGIN` (Linux) /
+  `@executable_path` (macOS) is added so a distributed binary finds
+  `libonnxruntime` placed next to it. Windows consumers should copy
+  `onnxruntime.dll` next to their `.exe`.
 - **macOS**: CPU is the portable default. The CoreML execution provider can be
   appended in `onnxrt_create` (`OrtSessionOptionsAppendExecutionProvider_CoreML`)
   for GPU/ANE offload — left out of the default path.
